@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MyTempo · 节拍器</title>
+<style>
+  :root {
+    --bg: #121216;
+    --card: #1d1d24;
+    --text: #f2f2f5;
+    --muted: #9a9aa5;
+    --accent: #ff9500;
+    --dot: #3a3a44;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+  }
+  .container {
+    width: 100%;
+    max-width: 430px;
+    padding: 24px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    text-align: center;
+    margin: 0;
+    letter-spacing: 0.5px;
+  }
+  h1 span { color: var(--accent); }
+
+  /* 视觉节拍灯珠 */
+  .dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    height: 40px;
+  }
+  .dot {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--dot);
+    transition: background 0.08s ease;
+    position: relative;
+  }
+  .dot.downbeat::after {
+    content: "";
+    position: absolute; inset: -4px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,149,0,0.7);
+  }
+  .dot.active { background: var(--accent); }
+
+  /* 速度 */
+  .tempo { text-align: center; }
+  .bpm-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 6px;
+  }
+  .bpm {
+    font-size: 76px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .bpm-unit { color: var(--muted); font-size: 18px; }
+  .tempo-btns {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+  }
+  .round {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    border: none;
+    background: var(--card);
+    color: var(--text);
+    font-size: 24px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .round:active { background: #2a2a34; }
+  .tap {
+    border: none; background: none;
+    color: var(--accent);
+    font-size: 16px; font-weight: 600;
+    cursor: pointer; padding: 8px 12px;
+  }
+
+  /* 分区标题 */
+  .label { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+
+  /* 节拍型 chips */
+  .chips {
+    display: flex; gap: 10px;
+    overflow-x: auto;
+    padding: 4px 0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: 0 0 auto;
+    padding: 9px 16px;
+    border-radius: 20px;
+    border: none;
+    background: var(--card);
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .chip.selected { background: var(--accent); color: #fff; }
+
+  /* 音效分段 */
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    background: var(--card);
+    border-radius: 12px;
+    padding: 5px;
+  }
+  .seg button {
+    border: none; background: none;
+    color: var(--muted);
+    padding: 9px 0;
+    font-size: 15px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .seg button.selected { background: var(--accent); color: #fff; }
+
+  /* 开关与音量 */
+  .options { display: flex; flex-direction: column; gap: 18px; }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .toggle-row span { font-size: 16px; }
+  .volume-row { display: flex; align-items: center; gap: 12px; }
+  .volume-row svg { flex: 0 0 auto; }
+
+  /* 滑块 */
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 6px;
+    border-radius: 3px;
+    background: var(--card);
+    outline: none;
+    accent-color: var(--accent);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+  }
+
+  /* iOS 风格开关 */
+  .switch { position: relative; width: 52px; height: 32px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0;
+    border-radius: 16px;
+    background: var(--dot);
+    transition: background 0.2s;
+  }
+  .switch .track::before {
+    content: "";
+    position: absolute;
+    left: 4px; top: 4px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s;
+  }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::before { transform: translateX(20px); }
+
+  /* 播放按钮 */
+  .play-wrap { display: flex; justify-content: center; }
+  .play {
+    width: 92px; height: 92px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 24px rgba(255,149,0,0.35);
+  }
+  .play:active { transform: scale(0.96); }
+  .play .icon { font-size: 40px; line-height: 1; }
+  .foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>MyTempo <span>节拍器</span></h1>
+
+  <!-- 视觉节拍 -->
+  <div class="dots" id="dots"></div>
+
+  <!-- 速度 -->
+  <div class="tempo">
+    <div class="bpm-row">
+      <span class="bpm" id="bpm">120</span>
+      <span class="bpm-unit">BPM</span>
+    </div>
+    <input type="range" id="tempoSlider" min="40" max="240" step="1" value="120">
+    <div class="tempo-btns">
+      <button class="round" id="minus">−</button>
+      <button class="tap" id="tap">打拍定速</button>
+      <button class="round" id="plus">+</button>
+    </div>
+  </div>
+
+  <!-- 节拍型 -->
+  <div>
+    <div class="label">节拍型</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <!-- 音效 -->
+  <div>
+    <div class="label">音效</div>
+    <div class="seg" id="seg"></div>
+  </div>
+
+  <!-- 选项 -->
+  <div class="options">
+    <div class="toggle-row">
+      <span>重音（第一拍）</span>
+      <label class="switch">
+        <input type="checkbox" id="accent" checked>
+        <span class="track"></span>
+      </label>
+    </div>
+    <div class="volume-row">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--muted)">
+        <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+      </svg>
+      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--muted)">
+        <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+        <path d="M16 8a5 5 0 0 1 0 8M18.5 5.5a9 9 0 0 1 0 13"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- 播放 -->
+  <div class="play-wrap">
+    <button class="play" id="play">
+      <span class="icon" id="playIcon">▶</span>
+    </button>
+  </div>
+  <div class="foot">点击播放即启动音频（iOS 需先点击一次）</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- 状态 ----------
+  const state = {
+    tempo: 120,
+    beatsPerMeasure: 4,
+    noteValue: 4,
+    sound: "classic",
+    accent: true,
+    volume: 0.8,
+    playing: false,
+  };
+
+  const TIME_SIGNATURES = [
+    [2,4],[3,4],[4,4],[5,4],[6,8],[7,8],[9,8],[12,8]
+  ];
+  const SOUNDS = {
+    classic:   { accent:{freq:1200, harm:0.3, dur:0.03, decay:0.006, amp:0.9}, beat:{freq:800,  harm:0.3, dur:0.03, decay:0.006, amp:0.7} },
+    woodblock: { accent:{freq:880,  harm:0.9, dur:0.05, decay:0.012, amp:0.9}, beat:{freq:620,  harm:0.9, dur:0.05, decay:0.012, amp:0.7} },
+    beep:      { accent:{freq:2093, harm:0,   dur:0.07, decay:0.02,  amp:0.9}, beat:{freq:1568, harm:0,   dur:0.07, decay:0.02,  amp:0.7} },
+    hihat:     { accent:{noise:true, dur:0.05, decay:0.008, amp:0.9},         beat:{noise:true, dur:0.05, decay:0.012, amp:0.55} },
+  };
+
+  // ---------- 音频 ----------
+  let ctx = null;
+  let masterGain = null;
+  let buffers = {};   // { sound: { accent: AudioBuffer, beat: AudioBuffer } }
+
+  function ensureAudio() {
+    if (ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    masterGain = ctx.createGain();
+    masterGain.connect(ctx.destination);
+    buildBuffers();
+  }
+
+  // 预合成每种音色的「重音」和「普通拍」波形（一次性，之后复用，采样级精准）
+  function buildBuffers() {
+    for (const name of Object.keys(SOUNDS)) {
+      buffers[name] = {
+        accent: makeBuffer(SOUNDS[name].accent),
+        beat: makeBuffer(SOUNDS[name].beat),
+      };
+    }
+  }
+
+  function makeBuffer(cfg) {
+    const dur = cfg.dur;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const t = i / ctx.sampleRate;
+      const env = Math.exp(-t / cfg.decay);
+      let v;
+      if (cfg.noise) {
+        v = (Math.random() * 2 - 1) * env * cfg.amp;
+      } else {
+        v = (Math.sin(2 * Math.PI * cfg.freq * t)
+             + cfg.harm * Math.sin(2 * Math.PI * cfg.freq * 2 * t)) * env * cfg.amp;
+      }
+      d[i] = v;
+    }
+    return buf;
+  }
+
+  // ---------- 前瞻调度（核心：精确计时）----------
+  const LOOKAHEAD = 25;         // 定时器间隔 ms
+  const SCHEDULE_AHEAD = 0.12;  // 提前排多少秒
+  let nextNoteTime = 0;
+  let currentBeat = 0;
+  let timerID = null;
+
+  function nextBeatDuration() { return 60.0 / state.tempo; }
+
+  function scheduler() {
+    while (nextNoteTime < ctx.currentTime + SCHEDULE_AHEAD) {
+      scheduleBeat(currentBeat, nextNoteTime);
+      nextNoteTime += nextBeatDuration();
+      currentBeat = (currentBeat + 1) % state.beatsPerMeasure;
+    }
+  }
+
+  function scheduleBeat(beatIndex, time) {
+    const isAccent = state.accent && beatIndex === 0;
+    const src = ctx.createBufferSource();
+    src.buffer = isAccent ? buffers[state.sound].accent : buffers[state.sound].beat;
+    src.connect(masterGain);
+    src.start(time);
+
+    // 视觉灯珠：按音频时钟换算成墙钟时间触发
+    const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
+    setTimeout(() => flash(beatIndex), delayMs);
+  }
+
+  function start() {
+    ensureAudio();
+    ctx.resume();
+    state.playing = true;
+    currentBeat = 0;
+    nextNoteTime = ctx.currentTime + 0.06;
+    timerID = setInterval(scheduler, LOOKAHEAD);
+    updatePlayIcon();
+    flash(0);
+  }
+
+  function stop() {
+    state.playing = false;
+    if (timerID) { clearInterval(timerID); timerID = null; }
+    updatePlayIcon();
+    clearDots();
+  }
+
+  // ---------- UI 构建 ----------
+  const dotsEl = document.getElementById("dots");
+  const chipsEl = document.getElementById("chips");
+  const segEl = document.getElementById("seg");
+  let dotEls = [];
+
+  function buildDots() {
+    dotsEl.innerHTML = "";
+    dotEls = [];
+    for (let i = 0; i < state.beatsPerMeasure; i++) {
+      const d = document.createElement("div");
+      d.className = "dot" + (i === 0 ? " downbeat" : "");
+      dotsEl.appendChild(d);
+      dotEls.push(d);
+    }
+  }
+
+  function buildChips() {
+    chipsEl.innerHTML = "";
+    TIME_SIGNATURES.forEach(([b, n]) => {
+      const btn = document.createElement("button");
+      btn.className = "chip";
+      btn.textContent = b + "/" + n;
+      btn.onclick = () => { setTimeSignature(b, n); };
+      chipsEl.appendChild(btn);
+    });
+  }
+
+  function buildSeg() {
+    segEl.innerHTML = "";
+    const labels = { classic: "经典", woodblock: "木鱼", beep: "电子", hihat: "踩镲" };
+    for (const name of Object.keys(SOUNDS)) {
+      const btn = document.createElement("button");
+      btn.textContent = labels[name];
+      btn.onclick = () => { setSound(name); };
+      segEl.appendChild(btn);
+    }
+  }
+
+  function setTimeSignature(b, n) {
+    state.beatsPerMeasure = b;
+    state.noteValue = n;
+    buildDots();
+    syncChips();
+    clearDots();
+  }
+
+  function setSound(name) {
+    state.sound = name;
+    syncSeg();
+  }
+
+  function syncChips() {
+    [...chipsEl.children].forEach((btn, i) => {
+      const [b] = TIME_SIGNATURES[i];
+      btn.classList.toggle("selected", b === state.beatsPerMeasure);
+    });
+  }
+
+  function syncSeg() {
+    [...segEl.children].forEach((btn, i) => {
+      btn.classList.toggle("selected", Object.keys(SOUNDS)[i] === state.sound);
+    });
+  }
+
+  function flash(beatIndex) {
+    dotEls.forEach((d, i) => {
+      d.classList.toggle("active", i === beatIndex);
+      if (i === beatIndex && state.playing) {
+        d.animate(
+          [{ transform: "scale(1)" }, { transform: "scale(1.55)" }, { transform: "scale(1)" }],
+          { duration: 140, easing: "ease-out" }
+        );
+      }
+    });
+  }
+
+  function clearDots() {
+    dotEls.forEach((d) => d.classList.remove("active"));
+  }
+
+  function updatePlayIcon() {
+    document.getElementById("playIcon").textContent = state.playing ? "■" : "▶";
+  }
+
+  // ---------- 控件绑定 ----------
+  const bpmEl = document.getElementById("bpm");
+  const slider = document.getElementById("tempoSlider");
+
+  function setTempo(v) {
+    state.tempo = Math.min(240, Math.max(40, Math.round(v)));
+    slider.value = state.tempo;
+    bpmEl.textContent = state.tempo;
+  }
+
+  slider.addEventListener("input", (e) => setTempo(e.target.value));
+  document.getElementById("minus").onclick = () => setTempo(state.tempo - 1);
+  document.getElementById("plus").onclick = () => setTempo(state.tempo + 1);
+
+  document.getElementById("accent").addEventListener("change", (e) => {
+    state.accent = e.target.checked;
+  });
+
+  document.getElementById("volume").addEventListener("input", (e) => {
+    state.volume = parseFloat(e.target.value);
+    if (masterGain) masterGain.gain.value = state.volume;
+  });
+
+  document.getElementById("play").onclick = () => {
+    state.playing ? stop() : start();
+  };
+
+  // 打拍定速
+  let lastTap = 0;
+  let tapTimes = [];
+  document.getElementById("tap").onclick = () => {
+    const now = performance.now();
+    if (lastTap) {
+      const interval = (now - lastTap) / 1000;
+      if (interval > 0.2 && interval < 2.0) {
+        tapTimes.push(60 / interval);
+        if (tapTimes.length > 4) tapTimes.shift();
+        const avg = tapTimes.reduce((a, b) => a + b, 0) / tapTimes.length;
+        setTempo(avg);
+      }
+    }
+    lastTap = now;
+  };
+
+  // 初始
+  buildDots();
+  buildChips();
+  buildSeg();
+  setTempo(120);
+  syncChips();
+  syncSeg();
+})();
+</script>
+</body>
+</html>
