@@ -4,7 +4,7 @@
 
 ## 在线使用
 
-👉 **https://xu-jhdbll.github.io/mytempo/**
+👉 **https://xu-jhdbl.github.io/mytempo/**
 
 （手机 Safari 直接打开即可，无需安装）
 
