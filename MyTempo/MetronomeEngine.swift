@@ -4,16 +4,18 @@
 //
 //  节拍器核心：用 AVAudioEngine + AVAudioSourceNode 实现「采样级」精确打拍。
 //
-//  为什么不用 Timer？
+//  为什么不用 Timer 计时？
 //  - Timer 由系统调度，会抖动、漂移，快节奏下每个 tick 可能差几毫秒，练习时跟不上。
 //  - 音频渲染回调每次处理一块采样（如 512 个），我们在这里按「采样点」计数，
 //    每个采样点是 1/44100 秒，天然精确，且和声音输出完全同步。
+//  （注意：这里说的「不用 Timer」指的是「计时发声」；下方视觉灯珠用的是一个
+//   60Hz 的 Timer，只负责把音频线程的拍点同步到 UI，轻微抖动不影响观感。）
 //
 
 import Foundation
 import AVFoundation
+import AudioToolbox
 import Combine
-import QuartzCore
 
 final class MetronomeEngine: ObservableObject {
 
@@ -56,7 +58,7 @@ final class MetronomeEngine: ObservableObject {
 
     // 打拍计数：渲染线程写入，主线程读取（用于视觉同步）
     private var beatCounter: Int64 = 0
-    private var displayLink: CADisplayLink?
+    private var timer: Timer?
     private var lastSeenCounter: Int64 = -1
 
     // 打拍定速（tap tempo）
@@ -79,7 +81,7 @@ final class MetronomeEngine: ObservableObject {
         engine.connect(sourceNode, to: engine.mainMixerNode, format: format)
 
         rebuildClicks()
-        startDisplayLink()
+        startTimer()
     }
 
     // MARK: - 控制
@@ -171,14 +173,16 @@ final class MetronomeEngine: ObservableObject {
         }
     }
 
-    // MARK: - 视觉同步
-    private func startDisplayLink() {
-        let link = CADisplayLink(target: self, selector: #selector(displayTick))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
+    // MARK: - 视觉同步（主线程，60Hz，只负责把拍点刷到 UI）
+    private func startTimer() {
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.displayTick()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
-    @objc private func displayTick() {
+    private func displayTick() {
         lock.lock(); let c = beatCounter; lock.unlock()
         guard c != lastSeenCounter else { return }
         lastSeenCounter = c
@@ -259,7 +263,7 @@ final class MetronomeEngine: ObservableObject {
     }
 
     deinit {
-        displayLink?.invalidate()
+        timer?.invalidate()
         engine.stop()
     }
 }
