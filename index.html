@@ -294,10 +294,10 @@
     [2,4],[3,4],[4,4],[5,4],[6,8],[7,8],[9,8],[12,8]
   ];
   const SOUNDS = {
-    classic:   { accent:{freq:1200, harm:0.3, dur:0.03, decay:0.006, amp:0.9}, beat:{freq:800,  harm:0.3, dur:0.03, decay:0.006, amp:0.7} },
-    woodblock: { accent:{freq:880,  harm:0.9, dur:0.05, decay:0.012, amp:0.9}, beat:{freq:620,  harm:0.9, dur:0.05, decay:0.012, amp:0.7} },
-    beep:      { accent:{freq:2093, harm:0,   dur:0.07, decay:0.02,  amp:0.9}, beat:{freq:1568, harm:0,   dur:0.07, decay:0.02,  amp:0.7} },
-    hihat:     { accent:{noise:true, dur:0.05, decay:0.008, amp:0.9},         beat:{noise:true, dur:0.05, decay:0.012, amp:0.55} },
+    classic:   { accent:{freq:1100, harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95}, beat:{freq:700,  harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95} },
+    woodblock: { accent:{freq:850,  harm:0.9, body:0.30, dur:0.08, decay:0.03,  amp:0.95}, beat:{freq:580,  harm:0.9, body:0.30, dur:0.08, decay:0.03,  amp:0.95} },
+    beep:      { accent:{freq:1800, harm:0,   body:0,    dur:0.10, decay:0.04,  amp:0.95}, beat:{freq:1200, harm:0,   body:0,    dur:0.10, decay:0.04,  amp:0.95} },
+    hihat:     { accent:{noise:true, dur:0.06, decay:0.015, amp:0.95},         beat:{noise:true, dur:0.06, decay:0.02,  amp:0.95} },
   };
 
   // ---------- 音频 ----------
@@ -310,6 +310,7 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC();
     masterGain = ctx.createGain();
+    masterGain.gain.value = state.volume;  // 初始化就应用音量（之前会一直是默认 1.0）
     masterGain.connect(ctx.destination);
     buildBuffers();
   }
@@ -325,21 +326,28 @@
   }
 
   function makeBuffer(cfg) {
-    const dur = cfg.dur;
-    const len = Math.floor(ctx.sampleRate * dur);
+    const len = Math.floor(ctx.sampleRate * cfg.dur);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
+    let peak = 0;
     for (let i = 0; i < len; i++) {
       const t = i / ctx.sampleRate;
       const env = Math.exp(-t / cfg.decay);
       let v;
       if (cfg.noise) {
-        v = (Math.random() * 2 - 1) * env * cfg.amp;
+        v = (Math.random() * 2 - 1) * env;
       } else {
         v = (Math.sin(2 * Math.PI * cfg.freq * t)
-             + cfg.harm * Math.sin(2 * Math.PI * cfg.freq * 2 * t)) * env * cfg.amp;
+             + cfg.harm * Math.sin(2 * Math.PI * cfg.freq * 2 * t)
+             + (cfg.body || 0) * Math.sin(2 * Math.PI * cfg.freq * 0.5 * t)) * env;
       }
       d[i] = v;
+      if (Math.abs(v) > peak) peak = Math.abs(v);
+    }
+    // 归一化到目标峰值：保证响度一致、且不削波
+    if (peak > 0) {
+      const scale = cfg.amp / peak;
+      for (let i = 0; i < len; i++) d[i] *= scale;
     }
     return buf;
   }
