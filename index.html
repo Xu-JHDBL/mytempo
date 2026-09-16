@@ -254,6 +254,13 @@
         <span class="track"></span>
       </label>
     </div>
+    <div class="toggle-row">
+      <span>增益（+6dB）</span>
+      <label class="switch">
+        <input type="checkbox" id="boost">
+        <span class="track"></span>
+      </label>
+    </div>
     <div class="volume-row">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--muted)">
         <path d="M3 9v6h4l5 5V4L7 9H3z"/>
@@ -287,6 +294,7 @@
     sound: "classic",
     accent: true,
     volume: 0.8,
+    boost: false,
     playing: false,
   };
 
@@ -303,6 +311,7 @@
   // ---------- 音频 ----------
   let ctx = null;
   let masterGain = null;
+  let limiter = null;
   let buffers = {};   // { sound: { accent: AudioBuffer, beat: AudioBuffer } }
 
   function ensureAudio() {
@@ -310,9 +319,27 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC();
     masterGain = ctx.createGain();
-    masterGain.gain.value = state.volume;  // 初始化就应用音量（之前会一直是默认 1.0）
-    masterGain.connect(ctx.destination);
+
+    // 限幅器：开启「增益」时把过高峰值压到 0dB 以内，避免削波失真
+    limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = 0;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.0005;
+    limiter.release.value = 0.1;
+
+    masterGain.connect(limiter);
+    limiter.connect(ctx.destination);
+
+    applyGain();
     buildBuffers();
+  }
+
+  // 根据「音量 × 增益」计算并应用总增益（增益 +6dB ≈ ×2.0）
+  function applyGain() {
+    if (!masterGain) return;
+    const boostFactor = state.boost ? 2.0 : 1.0;
+    masterGain.gain.value = state.volume * boostFactor;
   }
 
   // 预合成每种音色的「重音」和「普通拍」波形（一次性，之后复用，采样级精准）
@@ -504,7 +531,12 @@
 
   document.getElementById("volume").addEventListener("input", (e) => {
     state.volume = parseFloat(e.target.value);
-    if (masterGain) masterGain.gain.value = state.volume;
+    applyGain();
+  });
+
+  document.getElementById("boost").addEventListener("change", (e) => {
+    state.boost = e.target.checked;
+    applyGain();
   });
 
   document.getElementById("play").onclick = () => {
