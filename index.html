@@ -155,6 +155,7 @@
   .toggle-row span { font-size: 16px; }
   .volume-row { display: flex; align-items: center; gap: 12px; }
   .volume-row svg { flex: 0 0 auto; }
+  .vol-label { flex: 0 0 auto; min-width: 44px; text-align: right; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* 滑块 */
   input[type="range"] {
@@ -265,7 +266,8 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--muted)">
         <path d="M3 9v6h4l5 5V4L7 9H3z"/>
       </svg>
-      <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+      <input type="range" id="volume" min="0" max="1.5" step="0.01" value="0.8">
+      <span class="vol-label" id="volLabel">80%</span>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="var(--muted)">
         <path d="M3 9v6h4l5 5V4L7 9H3z"/>
         <path d="M16 8a5 5 0 0 1 0 8M18.5 5.5a9 9 0 0 1 0 13"/>
@@ -311,6 +313,7 @@
   // ---------- 音频 ----------
   let ctx = null;
   let masterGain = null;
+  let shaper = null;   // 软限幅器
   let buffers = {};   // { sound: { accent: AudioBuffer, beat: AudioBuffer } }
 
   function ensureAudio() {
@@ -319,8 +322,33 @@
     ctx = new AC();
     masterGain = ctx.createGain();
     masterGain.gain.value = state.volume;  // 初始化就应用音量
-    masterGain.connect(ctx.destination);
+
+    // 软限幅器：允许音量条超过 100%（峰值超出满量程时柔和压平，避免爆音）
+    shaper = ctx.createWaveShaper();
+    shaper.curve = makeSoftLimitCurve();
+    shaper.oversample = '2x';
+
+    masterGain.connect(shaper);
+    shaper.connect(ctx.destination);
     buildBuffers();
+  }
+
+  // 软限幅曲线：|x| ≤ knee 时线性通过，超过后线性压到 ceiling（≈满量程）
+  function makeSoftLimitCurve() {
+    const n = 2048, knee = 0.65, ceiling = 0.98;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;   // -1 .. 1
+      const ax = Math.abs(x);
+      const sign = ax === 0 ? 0 : x / ax;
+      if (ax <= knee) {
+        curve[i] = x;
+      } else {
+        const s = (ax - knee) / (1 - knee);
+        curve[i] = sign * (knee + (ceiling - knee) * s);
+      }
+    }
+    return curve;
   }
 
   // 应用音量增益
@@ -524,6 +552,7 @@
   document.getElementById("volume").addEventListener("input", (e) => {
     state.volume = parseFloat(e.target.value);
     applyGain();
+    document.getElementById("volLabel").textContent = Math.round(state.volume * 100) + '%';
   });
 
   document.getElementById("boost").addEventListener("change", (e) => {
