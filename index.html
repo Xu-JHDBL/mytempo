@@ -255,7 +255,7 @@
       </label>
     </div>
     <div class="toggle-row">
-      <span>增益（+6dB）</span>
+      <span>加强（更响亮）</span>
       <label class="switch">
         <input type="checkbox" id="boost">
         <span class="track"></span>
@@ -311,7 +311,6 @@
   // ---------- 音频 ----------
   let ctx = null;
   let masterGain = null;
-  let limiter = null;
   let buffers = {};   // { sound: { accent: AudioBuffer, beat: AudioBuffer } }
 
   function ensureAudio() {
@@ -319,61 +318,54 @@
     const AC = window.AudioContext || window.webkitAudioContext;
     ctx = new AC();
     masterGain = ctx.createGain();
-
-    // 限幅器：开启「增益」时把过高峰值压到 0dB 以内，避免削波失真
-    limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = 0;
-    limiter.knee.value = 0;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.0005;
-    limiter.release.value = 0.1;
-
-    masterGain.connect(limiter);
-    limiter.connect(ctx.destination);
-
-    applyGain();
+    masterGain.gain.value = state.volume;  // 初始化就应用音量
+    masterGain.connect(ctx.destination);
     buildBuffers();
   }
 
-  // 根据「音量 × 增益」计算并应用总增益（增益 +6dB ≈ ×2.0）
+  // 应用音量增益
   function applyGain() {
-    if (!masterGain) return;
-    const boostFactor = state.boost ? 2.0 : 1.0;
-    masterGain.gain.value = state.volume * boostFactor;
+    if (masterGain) masterGain.gain.value = state.volume;
   }
 
   // 预合成每种音色的「重音」和「普通拍」波形（一次性，之后复用，采样级精准）
   function buildBuffers() {
     for (const name of Object.keys(SOUNDS)) {
       buffers[name] = {
-        accent: makeBuffer(SOUNDS[name].accent),
-        beat: makeBuffer(SOUNDS[name].beat),
+        accent: makeBuffer(SOUNDS[name].accent, state.boost),
+        beat: makeBuffer(SOUNDS[name].beat, state.boost),
       };
     }
   }
 
-  function makeBuffer(cfg) {
-    const len = Math.floor(ctx.sampleRate * cfg.dur);
+  function makeBuffer(cfg, loud) {
+    // 「加强」模式：时长更长、衰减更慢、低频身体感更强 → 总能量更高，听感更响
+    const dur = loud ? cfg.dur * 1.5 : cfg.dur;
+    const decay = loud ? cfg.decay * 2.5 : cfg.decay;
+    const body = (cfg.body || 0) + (loud ? 0.25 : 0);
+    const amp = loud ? 0.98 : cfg.amp;
+
+    const len = Math.floor(ctx.sampleRate * dur);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
     let peak = 0;
     for (let i = 0; i < len; i++) {
       const t = i / ctx.sampleRate;
-      const env = Math.exp(-t / cfg.decay);
+      const env = Math.exp(-t / decay);
       let v;
       if (cfg.noise) {
         v = (Math.random() * 2 - 1) * env;
       } else {
         v = (Math.sin(2 * Math.PI * cfg.freq * t)
              + cfg.harm * Math.sin(2 * Math.PI * cfg.freq * 2 * t)
-             + (cfg.body || 0) * Math.sin(2 * Math.PI * cfg.freq * 0.5 * t)) * env;
+             + body * Math.sin(2 * Math.PI * cfg.freq * 0.5 * t)) * env;
       }
       d[i] = v;
       if (Math.abs(v) > peak) peak = Math.abs(v);
     }
     // 归一化到目标峰值：保证响度一致、且不削波
     if (peak > 0) {
-      const scale = cfg.amp / peak;
+      const scale = amp / peak;
       for (let i = 0; i < len; i++) d[i] *= scale;
     }
     return buf;
@@ -536,7 +528,7 @@
 
   document.getElementById("boost").addEventListener("change", (e) => {
     state.boost = e.target.checked;
-    applyGain();
+    buildBuffers();   // 重新合成「加强」或「普通」的点击音
   });
 
   document.getElementById("play").onclick = () => {
