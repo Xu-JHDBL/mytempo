@@ -14,6 +14,7 @@
     --dot: #3a3a44;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--bg);
@@ -102,6 +103,43 @@
     font-size: 16px; font-weight: 600;
     cursor: pointer; padding: 8px 12px;
   }
+
+  /* 速度模式切换 */
+  .mode-switch {
+    display: flex;
+    background: var(--card);
+    border-radius: 20px;
+    padding: 4px;
+    margin: 0 auto 12px;
+    width: fit-content;
+  }
+  .mode-btn {
+    border: none; background: none;
+    color: var(--muted);
+    font-size: 14px; font-weight: 600;
+    padding: 6px 18px;
+    border-radius: 16px;
+    cursor: pointer;
+  }
+  .mode-btn.selected { background: var(--accent); color: #fff; }
+  .input-wrap {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .input-wrap input[type="number"] {
+    width: 150px;
+    background: var(--card);
+    border: none;
+    border-radius: 12px;
+    color: var(--text);
+    font-size: 30px; font-weight: 700;
+    text-align: center;
+    padding: 12px 8px;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+  }
+  .input-wrap input[type="number"]:focus { outline: 2px solid var(--accent); }
+  .input-wrap input[type="number"]::-webkit-outer-spin-button,
+  .input-wrap input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
   /* 分区标题 */
   .label { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
@@ -222,11 +260,26 @@
 
   <!-- 速度 -->
   <div class="tempo">
+    <div class="mode-switch">
+      <button class="mode-btn selected" id="modeSlider">滑块</button>
+      <button class="mode-btn" id="modeInput">手动输入</button>
+    </div>
     <div class="bpm-row">
       <span class="bpm" id="bpm">120</span>
       <span class="bpm-unit">BPM</span>
     </div>
-    <input type="range" id="tempoSlider" min="40" max="240" step="1" value="120">
+
+    <!-- 模式1：滑块（40–240） -->
+    <div id="sliderWrap">
+      <input type="range" id="tempoSlider" min="40" max="240" step="1" value="120">
+    </div>
+
+    <!-- 模式2：手动输入（无上限） -->
+    <div class="input-wrap" id="inputWrap" hidden>
+      <input type="number" id="tempoInput" inputmode="numeric" min="1" step="1" value="120">
+      <span class="bpm-unit">BPM</span>
+    </div>
+
     <div class="tempo-btns">
       <button class="round" id="minus">−</button>
       <button class="tap" id="tap">打拍定速</button>
@@ -291,6 +344,7 @@
   // ---------- 状态 ----------
   const state = {
     tempo: 120,
+    tempoMode: "slider",   // "slider" 滑块 / "input" 手动输入
     beatsPerMeasure: 4,
     noteValue: 4,
     sound: "classic",
@@ -534,14 +588,43 @@
   // ---------- 控件绑定 ----------
   const bpmEl = document.getElementById("bpm");
   const slider = document.getElementById("tempoSlider");
+  const tempoInput = document.getElementById("tempoInput");
+  const sliderWrap = document.getElementById("sliderWrap");
+  const inputWrap = document.getElementById("inputWrap");
+  const modeSliderBtn = document.getElementById("modeSlider");
+  const modeInputBtn = document.getElementById("modeInput");
 
   function setTempo(v) {
-    state.tempo = Math.min(240, Math.max(40, Math.round(v)));
-    slider.value = state.tempo;
-    bpmEl.textContent = state.tempo;
+    v = Math.round(parseFloat(v));
+    if (!isFinite(v)) return;                        // 非法输入：忽略
+    // 模式1 滑块：40–240；模式2 手动输入：≥1、无上限
+    const lo = state.tempoMode === "slider" ? 40 : 1;
+    const hi = state.tempoMode === "slider" ? 240 : Infinity;
+    v = Math.min(hi, Math.max(lo, v));
+    state.tempo = v;
+    bpmEl.textContent = v;
+    slider.value = Math.min(240, Math.max(40, v));   // 滑块显示（手动模式可能夹到 240）
+    tempoInput.value = v;
+  }
+
+  function setTempoMode(mode) {
+    state.tempoMode = mode;
+    setTempo(state.tempo);                           // 切换时把速度夹到该模式合法范围
+    modeSliderBtn.classList.toggle("selected", mode === "slider");
+    modeInputBtn.classList.toggle("selected", mode === "input");
+    sliderWrap.hidden = mode !== "slider";
+    inputWrap.hidden = mode !== "input";
   }
 
   slider.addEventListener("input", (e) => setTempo(e.target.value));
+  tempoInput.addEventListener("input", (e) => {
+    const v = parseFloat(e.target.value);
+    if (isFinite(v) && v > 0) setTempo(v);
+  });
+  tempoInput.addEventListener("blur", () => { tempoInput.value = state.tempo; });
+  modeSliderBtn.onclick = () => setTempoMode("slider");
+  modeInputBtn.onclick = () => setTempoMode("input");
+
   document.getElementById("minus").onclick = () => setTempo(state.tempo - 1);
   document.getElementById("plus").onclick = () => setTempo(state.tempo + 1);
 
