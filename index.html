@@ -46,8 +46,9 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-wrap: wrap;
     gap: 14px;
-    height: 40px;
+    min-height: 40px;
   }
   .dot {
     width: 20px; height: 20px;
@@ -165,6 +166,41 @@
     cursor: pointer;
   }
   .chip.selected { background: var(--accent); color: #fff; }
+
+  /* 自定义节拍型 */
+  .custom-ts {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .custom-ts input[type="number"] {
+    width: 90px;
+    background: var(--card);
+    border: none;
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 600;
+    text-align: center;
+    padding: 10px 8px;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+  }
+  .custom-ts input[type="number"]:focus { outline: 2px solid var(--accent); }
+  .custom-ts input[type="number"]::-webkit-outer-spin-button,
+  .custom-ts input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .ts-slash { color: var(--muted); font-size: 22px; font-weight: 700; }
+  .custom-ts select {
+    background: var(--card);
+    border: none;
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 600;
+    padding: 10px 8px;
+  }
 
   /* 音效分段 */
   .seg {
@@ -291,6 +327,15 @@
   <div>
     <div class="label">节拍型</div>
     <div class="chips" id="chips"></div>
+    <div class="custom-ts" id="customTs" hidden>
+      <input type="number" id="tsBeats" inputmode="numeric" min="1" max="16" step="1" value="5">
+      <span class="ts-slash">/</span>
+      <select id="tsNote">
+        <option value="4">4</option>
+        <option value="8">8</option>
+        <option value="16">16</option>
+      </select>
+    </div>
   </div>
 
   <!-- 音效 -->
@@ -347,6 +392,9 @@
     tempoMode: "slider",   // "slider" 滑块 / "input" 手动输入
     beatsPerMeasure: 4,
     noteValue: 4,
+    customActive: false,   // 是否处于「自定义」编辑模式
+    customBeats: 5,        // 自定义拍数
+    customNote: 4,         // 自定义音符时值
     sound: "classic",
     accent: true,
     volume: 0.8,
@@ -355,7 +403,7 @@
   };
 
   const TIME_SIGNATURES = [
-    [2,4],[3,4],[4,4],[5,4],[6,8],[7,8],[9,8],[12,8]
+    [1,4],[2,4],[3,4],[4,4],[6,8]
   ];
   const SOUNDS = {
     classic:   { accent:{freq:1100, harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95}, beat:{freq:700,  harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95} },
@@ -504,6 +552,9 @@
   const dotsEl = document.getElementById("dots");
   const chipsEl = document.getElementById("chips");
   const segEl = document.getElementById("seg");
+  const customTs = document.getElementById("customTs");
+  const tsBeats = document.getElementById("tsBeats");
+  const tsNote = document.getElementById("tsNote");
   let dotEls = [];
 
   function buildDots() {
@@ -523,9 +574,22 @@
       const btn = document.createElement("button");
       btn.className = "chip";
       btn.textContent = b + "/" + n;
-      btn.onclick = () => { setTimeSignature(b, n); };
+      btn.onclick = () => { state.customActive = false; setTimeSignature(b, n); };
       chipsEl.appendChild(btn);
     });
+    // 自定义 chip（最后一个）
+    const custom = document.createElement("button");
+    custom.className = "chip";
+    custom.textContent = "自定义";
+    custom.onclick = activateCustom;
+    chipsEl.appendChild(custom);
+  }
+
+  function activateCustom() {
+    state.customActive = true;
+    tsBeats.value = state.customBeats;
+    tsNote.value = state.customNote;
+    setTimeSignature(state.customBeats, state.customNote);
   }
 
   function buildSeg() {
@@ -553,10 +617,20 @@
   }
 
   function syncChips() {
+    const defaultCount = TIME_SIGNATURES.length;
+    const activeIdx = state.customActive ? -1
+      : TIME_SIGNATURES.findIndex(([b, n]) => b === state.beatsPerMeasure && n === state.noteValue);
     [...chipsEl.children].forEach((btn, i) => {
-      const [b] = TIME_SIGNATURES[i];
-      btn.classList.toggle("selected", b === state.beatsPerMeasure);
+      if (i < defaultCount) {
+        btn.classList.toggle("selected", i === activeIdx);
+      } else {
+        btn.classList.toggle("selected", state.customActive);
+        btn.textContent = state.customActive
+          ? state.beatsPerMeasure + "/" + state.noteValue
+          : "自定义";
+      }
     });
+    customTs.hidden = !state.customActive;
   }
 
   function syncSeg() {
@@ -663,6 +737,20 @@
     }
     lastTap = now;
   };
+
+  // 自定义节拍型：拍数 / 音符时值
+  tsBeats.addEventListener("input", (e) => {
+    const v = Math.round(parseFloat(e.target.value));
+    if (isFinite(v) && v >= 1 && v <= 16) {
+      state.customBeats = v;
+      setTimeSignature(v, state.customNote);
+    }
+  });
+  tsBeats.addEventListener("blur", () => { tsBeats.value = state.customBeats; });
+  tsNote.addEventListener("change", (e) => {
+    state.customNote = parseInt(e.target.value, 10) || 4;
+    setTimeSignature(state.customBeats, state.customNote);
+  });
 
   // 初始
   buildDots();
