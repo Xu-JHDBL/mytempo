@@ -154,6 +154,17 @@
     scrollbar-width: none;
   }
   .chips::-webkit-scrollbar { display: none; }
+
+  /* 桌面端（鼠标）：换行显示全部选项。
+     鼠标滚轮只能纵向滚动，横向 overflow 隐藏滚动条后无法操作，故换行兜底 */
+  @media (hover: hover) and (pointer: fine) {
+    .chips {
+      flex-wrap: wrap;
+      overflow-x: visible;
+      padding-bottom: 0;
+    }
+  }
+
   .chip {
     flex: 0 0 auto;
     padding: 9px 16px;
