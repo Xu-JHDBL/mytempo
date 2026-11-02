@@ -338,6 +338,12 @@
     </div>
   </div>
 
+  <!-- 分拍 -->
+  <div>
+    <div class="label">分拍</div>
+    <div class="chips" id="rhythmChips"></div>
+  </div>
+
   <!-- 音效 -->
   <div>
     <div class="label">音效</div>
@@ -395,6 +401,7 @@
     customActive: false,   // 是否处于「自定义」编辑模式
     customBeats: 5,        // 自定义拍数
     customNote: 4,         // 自定义音符时值
+    rhythm: "off",         // 分拍节奏型（"off" 为不分拍）
     sound: "classic",
     accent: true,
     volume: 0.8,
@@ -404,6 +411,17 @@
 
   const TIME_SIGNATURES = [
     [1,4],[2,4],[3,4],[4,4],[6,8]
+  ];
+  // 分拍节奏型：pattern 是一拍内的时值切分（分数，合计 = 1）
+  const RHYTHMS = [
+    { id: "off",        label: "关",         pattern: null },
+    { id: "eighths",    label: "二八",       pattern: [1/2, 1/2] },
+    { id: "sixteenths", label: "四十六",     pattern: [1/4, 1/4, 1/4, 1/4] },
+    { id: "e16_16",     label: "前八后十六", pattern: [1/2, 1/4, 1/4] },
+    { id: "16_16_e",    label: "前十六后八", pattern: [1/4, 1/4, 1/2] },
+    { id: "triplet",    label: "三连音",     pattern: [1/3, 1/3, 1/3] },
+    { id: "dotted",     label: "附点",       pattern: [3/4, 1/4] },
+    { id: "syncope",    label: "切分",       pattern: [1/4, 1/2, 1/4] },
   ];
   const SOUNDS = {
     classic:   { accent:{freq:1100, harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95}, beat:{freq:700,  harm:0.4, body:0.35, dur:0.06, decay:0.02,  amp:0.95} },
@@ -415,6 +433,7 @@
   // ---------- 音频 ----------
   let ctx = null;
   let masterGain = null;
+  let subGain = null;   // 分拍次级点击（经较低增益输出）
   let shaper = null;   // 软限幅器
   let buffers = {};   // { sound: { accent: AudioBuffer, beat: AudioBuffer } }
 
@@ -424,6 +443,11 @@
     ctx = new AC();
     masterGain = ctx.createGain();
     masterGain.gain.value = state.volume;  // 初始化就应用音量
+
+    // 分拍次级点击：固定较低增益，主拍始终更突出
+    subGain = ctx.createGain();
+    subGain.gain.value = SUB_GAIN;
+    subGain.connect(masterGain);
 
     // 软限幅器：允许音量条超过 100%（峰值超出满量程时柔和压平，避免爆音）
     shaper = ctx.createWaveShaper();
@@ -504,6 +528,7 @@
   // ---------- 前瞻调度（核心：精确计时）----------
   const LOOKAHEAD = 25;         // 定时器间隔 ms
   const SCHEDULE_AHEAD = 0.12;  // 提前排多少秒
+  const SUB_GAIN = 0.55;        // 分拍次级点击相对主拍的音量
   let nextNoteTime = 0;
   let currentBeat = 0;
   let timerID = null;
@@ -518,16 +543,36 @@
     }
   }
 
-  function scheduleBeat(beatIndex, time) {
-    const isAccent = state.accent && beatIndex === 0;
+  // 一拍内的分拍时值（不分拍时就是整拍）
+  function beatSubdivisions() {
+    const r = RHYTHMS.find(r => r.id === state.rhythm) || RHYTHMS[0];
+    return r.pattern || [1];
+  }
+
+  function scheduleBeat(beatIndex, beatStart) {
+    const subs = beatSubdivisions();
+    const beatDur = nextBeatDuration();
+    let t = beatStart;
+    for (let k = 0; k < subs.length; k++) {
+      scheduleSubBeat(beatIndex, k, t);
+      t += subs[k] * beatDur;
+    }
+  }
+
+  function scheduleSubBeat(beatIndex, k, time) {
+    // 每拍第一个分拍是「主拍」；重音只落在第 1 拍的第一个分拍
+    const isAccent = state.accent && beatIndex === 0 && k === 0;
+    const isSub = k > 0;
     const src = ctx.createBufferSource();
     src.buffer = isAccent ? buffers[state.sound].accent : buffers[state.sound].beat;
-    src.connect(masterGain);
+    src.connect(isSub ? subGain : masterGain);
     src.start(time);
 
-    // 视觉灯珠：按音频时钟换算成墙钟时间触发
-    const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
-    setTimeout(() => flash(beatIndex), delayMs);
+    // 视觉灯珠只在主拍闪烁，分拍不额外闪烁
+    if (k === 0) {
+      const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
+      setTimeout(() => flash(beatIndex), delayMs);
+    }
   }
 
   function start() {
@@ -551,6 +596,7 @@
   // ---------- UI 构建 ----------
   const dotsEl = document.getElementById("dots");
   const chipsEl = document.getElementById("chips");
+  const rhythmChipsEl = document.getElementById("rhythmChips");
   const segEl = document.getElementById("seg");
   const customTs = document.getElementById("customTs");
   const tsBeats = document.getElementById("tsBeats");
@@ -590,6 +636,23 @@
     tsBeats.value = state.customBeats;
     tsNote.value = state.customNote;
     setTimeSignature(state.customBeats, state.customNote);
+  }
+
+  function buildRhythms() {
+    rhythmChipsEl.innerHTML = "";
+    RHYTHMS.forEach(r => {
+      const btn = document.createElement("button");
+      btn.className = "chip";
+      btn.textContent = r.label;
+      btn.onclick = () => { state.rhythm = r.id; syncRhythms(); };
+      rhythmChipsEl.appendChild(btn);
+    });
+  }
+
+  function syncRhythms() {
+    [...rhythmChipsEl.children].forEach((btn, i) => {
+      btn.classList.toggle("selected", RHYTHMS[i].id === state.rhythm);
+    });
   }
 
   function buildSeg() {
@@ -755,9 +818,11 @@
   // 初始
   buildDots();
   buildChips();
+  buildRhythms();
   buildSeg();
   setTempo(120);
   syncChips();
+  syncRhythms();
   syncSeg();
 })();
 </script>
